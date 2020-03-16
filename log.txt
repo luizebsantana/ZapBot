@@ -1,0 +1,20 @@
+[Domingo, 15/03/2020 - 21:44:50]
+Iniciando script...
+Não há mensagens para domingo.
+Fim de execução.
+
+[Segunda-feira, 16/03/2020 - 07:00:02]
+Iniciando script...
+Carrengando pagina: https://web.whatsapp.com/.
+Abrindo conversa 'CARRANCA MORADORES'.
+Message: no such element: Unable to locate element: {"method":"xpath","selector":"//div[@class="_3u328 copyable-text selectable-text"]"}
+  (Session info: chrome=80.0.3987.132)
+
+Erro ao enviar a mensagem de segunda-feira.
+Tentando novamente...
+Abrindo conversa 'CARRANCA MORADORES'.
+Enviando mensagem...
+Mensagem enviada com sucesso.
+Driver finalizado.
+Fim de execução.
+
