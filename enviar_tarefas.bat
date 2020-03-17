@@ -1,3 +1,3 @@
 call activate
-call python enviar_tarefas.py %1
+call python ./src/enviar_tarefas.py -c="CARRANCA MORADORES"
 call exit
