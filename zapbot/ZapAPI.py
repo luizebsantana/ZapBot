@@ -119,7 +119,8 @@ class ZapAPI:
         return self
 
     def __next__(self) -> ChatMessage:
-        self.__lookup_new_messages()
+        if len(self.queue) == 0:
+            self.__lookup_new_messages()
         if len(self.queue) > 0:
             return self.queue.pop(0)
         else:
