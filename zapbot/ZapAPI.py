@@ -1,4 +1,5 @@
 
+from http.client import REQUEST_URI_TOO_LONG
 import os, re
 import logging
 from time import sleep
@@ -12,6 +13,7 @@ from selenium.webdriver.support import expected_conditions
 from selenium.common.exceptions import NoSuchElementException,\
                                        StaleElementReferenceException
 from .ChatTypes import ChatMessage, ChatNotification, ChatTextMessage
+from .Exceptions import ChatNotFoundException, NoOpenChatException
 
 # from PIL import Image
 # from io import BytesIO
@@ -62,7 +64,7 @@ CHAT = '//div[@id="main"]//div[contains(@aria-label, "Lista de mensagens.")]/div
 
 class ZapAPI:
 
-    def __init__(self, driver_path:str, debug_level=logging.DEBUG, profile_path:str = PROFILE_PATH):
+    def __init__(self, driver_path:str, debug_level=logging.DEBUG, profile_path:str = PROFILE_PATH, initialize: bool=False):
         
         logger.setLevel(debug_level)
 
@@ -104,7 +106,8 @@ class ZapAPI:
             self.driver.close()
 
         self.__contact_last_message: dict = {}
-        self.__init_chats()
+        if initialize:
+            self.__init_chats()
 
 
     def get_notifications(self, archived: bool = False) -> list[ChatNotification]:
@@ -137,15 +140,15 @@ class ZapAPI:
             messages.append(ChatNotification(name, dt_string, preview))
         return messages
 
-    def open_chat(self, search: str=None, exact_match: bool=False) -> str:
+    def open_chat(self, target: str=None, exact_match: bool=True) -> str:
         """ Abre um chat para leitura ou envio de mensages, se o parametro de
             busca nao for fornecido retorna o chat aberto atualmente.
 
             Parameters:
-                search (str): nome para busca nas conversas contatos e grupos
+                target (str): nome para busca nas conversas contatos e grupos
 
                 exact_match (bool): Se verdadeiro o titulo da conversa ou do contato
-                precisa ser exatamente igual ao valor passado em search caso contrario
+                precisa ser exatamente igual ao valor passado em target caso contrario
                 o chat nao é aberto e None é retornado
 
             Returns:
@@ -153,16 +156,16 @@ class ZapAPI:
                 encontrado None é retornado
         """
 
-        if search is None:
+        if target is None:
             try:
                 return self.driver.find_element(By.XPATH, CHAT_NAME).text
-            except:
-                return None
+            except NoSuchElementException:
+                raise NoOpenChatException from None
 
         # Verifica se já corresponde ao chat aberto
         try:
             open_chat = self.driver.find_element(By.XPATH, CHAT_NAME).text
-            if search == open_chat:
+            if target == open_chat:
                 logger.info("Chat '{}' já está aberto.".format(open_chat))
                 return open_chat
         except:
@@ -174,7 +177,7 @@ class ZapAPI:
         # Encontra a caixa de pesquisa e digita o nome da pessoa
         search_box = self.driver.find_element(By.XPATH, SEARCH_BAR)
         self.driver.execute_script('arguments[0].innerHTML="";', search_box)
-        search_box.send_keys(search)
+        search_box.send_keys(target)
 
         try:
             container = self.driver.find_element(By.XPATH, CHAT_LIST_CONTAINER)
@@ -201,7 +204,7 @@ class ZapAPI:
 
                 # Clica no resultado e espera o chat ser aberto
                 result_name = res[0].find_element(By.XPATH, SEARCH_RESULTS_NAME).text
-                if not exact_match or (exact_match and result_name == search):
+                if not exact_match or (exact_match and result_name == target):
                     try:
                         open_chat = self.driver.find_element(By.XPATH, CHAT_NAME).text
                         if result_name != open_chat:
@@ -217,8 +220,8 @@ class ZapAPI:
             except (IndexError, StaleElementReferenceException, NoSuchElementException) as e:
                 logger.error(e)
                 tries += 1
-        logger.error("Nao foi possivel abrir a conversa {}.".format(search))
-        return None
+        logger.error("Nao foi possivel abrir a conversa {}.".format(target))
+        raise ChatNotFoundException(target)
 
     def send_message(self, mensagem: str) -> None:
         """ Envia uma mensagem para o chat aberto
@@ -229,9 +232,12 @@ class ZapAPI:
             Returns:
                 None
         """
+        try: 
+            caixa_de_mensagem = self.driver.find_element(By.XPATH, MENSAGE_BOX)
+        except NoSuchElementException:
+            raise NoOpenChatException from None
         # pre-process mensage
         mensagem_lines = mensagem.split('\n')
-        caixa_de_mensagem = self.driver.find_element(By.XPATH, MENSAGE_BOX)
         self.driver.execute_script('arguments[0].innerHTML="";', caixa_de_mensagem)
         for i, line in enumerate(mensagem_lines):
             caixa_de_mensagem.send_keys(line)
@@ -246,17 +252,17 @@ class ZapAPI:
             Parameters:
                 only_new_messages (bool): Verdadeiro retorna somente as mensagens novas,
                 Falso retorna as ultimas mensagens (quantidade indefinida aprox.: [8 a 30] )
+                max_number (int): O número maximo de mensagens a ser retornado.
 
             Returns:
-                list[ChatMessage]: Lista de mensagens
+                list[ChatMessage]: Lista de mensagens, None se não há novas mensagens
         """
         res = self.driver.find_elements(By.XPATH, CHAT)
         messages: list[ChatMessage] = []
         try:
             open_chat: str = self.driver.find_element(By.XPATH, CHAT_NAME).text
         except NoSuchElementException:
-            logger.error("Nenhuma conversa aberta.")
-            return None
+            raise NoOpenChatException from None
 
         # Retorna a barra de rolagem para o final
         container = self.driver.find_element(By.XPATH, CHAT_CONTAINER)
@@ -273,7 +279,7 @@ class ZapAPI:
                         if element.text.index("NÃO LIDA"):
                             break
                     except ValueError:
-                        messages.append(ChatMessage(element.text))
+                        messages.append(ChatMessage(chat=open_chat, message=element.text))
                 except:
                     pass
             try:
@@ -283,7 +289,7 @@ class ZapAPI:
                 sender = re.search('(?<=\] ).+:', metadata_raw).group(0)[:-1]
                 dt = datetime.strptime(re.search("\[.*?\]", metadata_raw).group(0), '[%H:%M, %d/%m/%Y]')
                 content = data.text.replace('\\n','\n')
-                message = ChatTextMessage(sender=sender, datetime=dt, message=content)
+                message = ChatTextMessage(chat=open_chat, sender=sender, datetime=dt, message=content)
                 if message == self.__contact_last_message[open_chat] or (max_number > -1 and len(messages) >= max_number):
                     break
                 else:
@@ -294,7 +300,8 @@ class ZapAPI:
                 pass
         if len(messages) > 0:
             self.__contact_last_message[open_chat] = messages[-1]
-        return messages
+            return messages
+        return None
 
     def __init_chats(self):
         search_box = self.driver.find_element(By.XPATH, SEARCH_BAR)

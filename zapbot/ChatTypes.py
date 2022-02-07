@@ -11,6 +11,7 @@ class ChatNotification:
 
 @dataclass(frozen=True)
 class ChatMessage:
+    chat: str
     message: str
 
 
