@@ -5,6 +5,7 @@ import logging
 from time import sleep
 from datetime import datetime
 from selenium import webdriver
+from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -13,7 +14,9 @@ from selenium.webdriver.support import expected_conditions
 from selenium.common.exceptions import NoSuchElementException,\
                                        StaleElementReferenceException
 from .ChatTypes import ChatMessage, ChatNotification, ChatTextMessage
-from .Exceptions import ChatNotFoundException, NoOpenChatException
+from .Exceptions import ChatListNotFoundException,\
+                        ChatNotFoundException,\
+                        NoOpenChatException
 
 # from PIL import Image
 # from io import BytesIO
@@ -40,10 +43,11 @@ PROFILE_PATH = os.path.join(os.getcwd(),'userdata', 'profile', 'wpp')
 
 # ---------- XPATHS ------------
 SEARCH_BAR = '//div[@data-tab="3" and @role="textbox"]'
-CHAT_LIST_CONTAINER = '//div[@id="pane-side"]'
+LIST_CONTAINER = '//div[@id="pane-side"]'
+CHAT_LIST = './/div[@aria-label="Lista de conversas"]/div/div/div'
+SEARCH_LIST = './/div[@aria-label="Resultados da pesquisa."]/div/div/div'
+LIST_ITEM_NAME = './/div[@aria-colindex="2"]/div[1]'
 SEARCH_CANCEL_BUTTON = '//button[@aria-label="Lista de conversas"]/../span/button'
-SEARCH_RESULTS = './/div[@aria-label="Resultados da pesquisa."]/div/div/div'
-SEARCH_RESULTS_NAME = './/div[@aria-colindex="2"]/div[1]'
 
 ARCHIVED_OPEN_BUTTON = '//div[@id="pane-side"]/button[@aria-label="Arquivadas "]'
 ARCHIVED_BACK_BUTTON = '//header//button[@aria-label="Voltar"]'
@@ -64,7 +68,7 @@ CHAT = '//div[@id="main"]//div[contains(@aria-label, "Lista de mensagens.")]/div
 
 class ZapAPI:
 
-    def __init__(self, driver_path:str, debug_level=logging.DEBUG, profile_path:str = PROFILE_PATH, initialize: bool=False):
+    def __init__(self, driver_path:str, debug_level=logging.DEBUG, profile_path:str = PROFILE_PATH):
         
         logger.setLevel(debug_level)
 
@@ -106,12 +110,21 @@ class ZapAPI:
             self.driver.close()
 
         self.__contact_last_message: dict = {}
-        if initialize:
-            self.__init_chats()
+        self.queue: list[ChatMessage] = []
 
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> ChatMessage:
+        self.__lookup_new_messages()
+        if len(self.queue) > 0:
+            return self.queue.pop(0)
+        else:
+            raise StopIteration
 
     def get_notifications(self, archived: bool = False) -> list[ChatNotification]:
-        """ Retorna as notificações não lidas.
+        """ DEPRECATED use lookup_new_messages() instead Retorna as notificações não lidas.
 
             Parameters:
                 archived (bool): Caso verdadeiro também retorna as notificações de chats
@@ -139,6 +152,30 @@ class ZapAPI:
                 preview = None
             messages.append(ChatNotification(name, dt_string, preview))
         return messages
+
+    def __lookup_new_messages(self) -> int:
+        messages_fount: int = 0
+        for notify in self.get_notifications():
+            self.open_chat(notify.name)
+            messages = self.get_messages()
+            if messages is not None and len(messages) > 0:
+                messages_fount += len(messages)
+                self.queue.extend(messages)
+        for res in self.__get_chat_list_elements():
+            self.__open_chat_list_item(res)
+            messages = self.get_messages()
+            if messages is not None and len(messages) > 0:
+                messages_fount += len(messages)
+                self.queue.extend(messages)
+            else:
+                break
+        return messages_fount
+
+    def get_chat_list(self) -> list[str]:
+        chat_list: list[str] = []
+        for res in self.__get_chat_list_elements():
+            chat_list.append(res.find_element(By.XPATH, LIST_ITEM_NAME).text)
+        return chat_list
 
     def open_chat(self, target: str=None, exact_match: bool=True) -> str:
         """ Abre um chat para leitura ou envio de mensages, se o parametro de
@@ -171,56 +208,31 @@ class ZapAPI:
         except:
             pass
 
-        # Fecha a aba de mensagens arquivadas caso aberta
-        self.__close_archived()
+        # Verifica se a conversa requisitada já esta na lista atual 
+        res = self.__get_chat_list_elements()
+        for r in res:
+            chat_name = r.find_element(By.XPATH, LIST_ITEM_NAME).text
+            if chat_name == target:
+                return self.__open_chat_list_item(r)
 
         # Encontra a caixa de pesquisa e digita o nome da pessoa
         search_box = self.driver.find_element(By.XPATH, SEARCH_BAR)
         self.driver.execute_script('arguments[0].innerHTML="";', search_box)
         search_box.send_keys(target)
 
+        # Espera pelo termino do loading
+        WebDriverWait(self.driver, 2).until(
+            expected_conditions.element_to_be_clickable((By.XPATH, SEARCH_CANCEL_BUTTON))
+        )
+        
+        # Retorna lista de conversas
+        res = self.__get_chat_list_elements()
+        result_name = res[0].find_element(By.XPATH, LIST_ITEM_NAME).text
         try:
-            container = self.driver.find_element(By.XPATH, CHAT_LIST_CONTAINER)
-        except NoSuchElementException:
+            if not exact_match or (exact_match and result_name == target):
+                return self.__open_chat_list_item(res[0])
+        finally:
             self.driver.find_element(By.XPATH, SEARCH_CANCEL_BUTTON).click()
-            container = self.driver.find_element(By.XPATH, CHAT_LIST_CONTAINER)
-        
-        # Retorna a barra de rolagem para o inicio
-        self.driver.execute_script('arguments[0].scroll(0,0)', container)
-        
-        # Espera a execucao do javascript
-        sleep(0.2)
-
-        # Tenta abrir a mensagem
-        tries = 0
-        while tries < 5:
-            try:
-                # Espera pelo termino do loading
-                WebDriverWait(self.driver, 2).until(
-                    expected_conditions.element_to_be_clickable((By.XPATH, SEARCH_CANCEL_BUTTON))
-                )
-                # Ordena resultados pelo ordem da posicao y na tela
-                res = sorted(container.find_elements(By.XPATH, SEARCH_RESULTS),  key=lambda x: x.location['y'])
-
-                # Clica no resultado e espera o chat ser aberto
-                result_name = res[0].find_element(By.XPATH, SEARCH_RESULTS_NAME).text
-                if not exact_match or (exact_match and result_name == target):
-                    try:
-                        open_chat = self.driver.find_element(By.XPATH, CHAT_NAME).text
-                        if result_name != open_chat:
-                            logger.info("Chat aberto '{}' difere de '{}' tentando novamente...".format(open_chat, result_name))
-                            res[0].click()
-                            sleep(0.1)
-                        else:
-                            logger.info("Chat '{}' aberto com sucesso.".format(open_chat, result_name))
-                            return open_chat
-                    except NoSuchElementException:
-                        res[0].click()
-                tries += 1
-            except (IndexError, StaleElementReferenceException, NoSuchElementException) as e:
-                logger.error(e)
-                tries += 1
-        logger.error("Nao foi possivel abrir a conversa {}.".format(target))
         raise ChatNotFoundException(target)
 
     def send_message(self, mensagem: str) -> None:
@@ -277,9 +289,10 @@ class ZapAPI:
                     element = e.find_element(By.XPATH, './/span[@aria-live]')
                     try:
                         if element.text.index("NÃO LIDA"):
+                            self.__contact_last_message[open_chat] = messages[-1]
                             break
                     except ValueError:
-                        messages.append(ChatMessage(chat=open_chat, message=element.text))
+                        messages.insert(0, ChatMessage(chat=open_chat, message=element.text))
                 except:
                     pass
             try:
@@ -298,36 +311,59 @@ class ZapAPI:
                 logger.error(e)
             except NoSuchElementException:
                 pass
+        if self.__contact_last_message[open_chat] is None:
+            self.__contact_last_message[open_chat] = messages[-1]
+            return None
         if len(messages) > 0:
             self.__contact_last_message[open_chat] = messages[-1]
             return messages
         return None
 
-    def __init_chats(self):
-        search_box = self.driver.find_element(By.XPATH, SEARCH_BAR)
-        self.driver.execute_script('arguments[0].innerHTML="";', search_box)
-        search_box.send_keys(' ')
-        try:
-            container = self.driver.find_element(By.XPATH, CHAT_LIST_CONTAINER)
-        except NoSuchElementException:
-            self.driver.find_element(By.XPATH, SEARCH_CANCEL_BUTTON).click()
-            container = self.driver.find_element(By.XPATH, CHAT_LIST_CONTAINER)
+    def __open_chat_list_item(self, list_item: WebElement) -> None:
+        # Tenta abrir a mensagem
+        tries = 0
+        # Clica no resultado e espera o chat ser aberto
+        target_chat_name = list_item.find_element(By.XPATH, LIST_ITEM_NAME).text
+        while tries < 5:
+            try:
+                try:
+                    open_chat = self.driver.find_element(By.XPATH, CHAT_NAME).text
+                    if target_chat_name != open_chat:
+                        logger.info("Chat aberto '{}' difere de '{}' tentando novamente...".format(open_chat, target_chat_name))
+                        list_item.click()
+                        sleep(0.1)
+                    else:
+                        logger.info("Chat '{}' aberto com sucesso.".format(open_chat, target_chat_name))
+                        return open_chat
+                except NoSuchElementException:
+                    list_item.click()
+                tries += 1
+            except (IndexError, StaleElementReferenceException, NoSuchElementException) as e:
+                logger.error(e)
+                tries += 1
+        logger.error("Nao foi possivel abrir a conversa {}.".format(target_chat_name))
+        raise ChatNotFoundException(target_chat_name)
+
+    def __get_chat_list_elements(self) -> list[WebElement]:
+        # Fecha a aba de mensagens arquivadas caso aberta
+        self.__close_archived()
         # Retorna a barra de rolagem para o inicio
+        container = self.driver.find_element(By.XPATH, LIST_CONTAINER)
         self.driver.execute_script('arguments[0].scroll(0,0)', container)
         # Espera a execucao do javascript
-        # Espera pelo termino do loading
-        WebDriverWait(self.driver, 2).until(
-            expected_conditions.element_to_be_clickable((By.XPATH, SEARCH_CANCEL_BUTTON))
-        )
-        # Ordena resultados pelo ordem da posicao y na tela
-        res = sorted(container.find_elements(By.XPATH, SEARCH_RESULTS),  key=lambda x: x.location['y'])
-        chat_names = [r.find_element(By.XPATH, SEARCH_RESULTS_NAME).text for r in res]
-        for chat_name in chat_names:
-            self.open_chat(chat_name, True)
-            msg = self.get_messages(max_number=1)
-            if msg is not None and len(msg) > 0:
-                logger.info("initializing chats: "+chat_name+"   "+msg[0].message)
-        return None
+        sleep(0.2)
+        # Ordena resultados pelo ordem da posicao y na tela e retorna a lista de busca ou de conversas
+        try:
+            res = container.find_elements(By.XPATH, SEARCH_LIST)
+            if len(res) == 0:
+                res = container.find_elements(By.XPATH, CHAT_LIST)
+        except NoSuchElementException:
+            res = container.find_elements(By.XPATH, CHAT_LIST)
+            if len(res) == 0:
+                res = container.find_elements(By.XPATH, SEARCH_LIST)
+        if len(res) == 0:
+            raise ChatListNotFoundException
+        return sorted(res, key=lambda x: x.location['y'])
 
     def __open_archived(self) -> bool:
         tries = 0

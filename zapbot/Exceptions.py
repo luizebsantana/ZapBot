@@ -1,3 +1,17 @@
+class ChatListNotFoundException(Exception):
+    """Exception raised if we cant found a chat.
+
+    Attributes:
+        message -- explanation of the error
+    """
+
+    def __init__(self, message="Chat list not found"):
+        self.message = message
+        super().__init__(self.message)
+
+    def __str__(self):
+        return f'{self.target} -> {self.message}'
+
 class ChatNotFoundException(Exception):
     """Exception raised if we cant found a chat.
 
