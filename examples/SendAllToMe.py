@@ -21,15 +21,9 @@ def zapbot(bot: ZapAPI):
         for msg in bot:
             if msg.chat == TARGET:
                 try:
-                    
-                    # Pega o nome passado entre [ ]
-                    chat = re.search("\[.*?\]", msg.message).group(0)
-                    # Pega a mensagem apos [ ]
-                    message = msg.message[len(chat):]
-                    # Envia para a pessoa a mensagem capturada
-                    bot.open_chat(chat[1:-1])
+                    chat, message = msg.message.split(":")
+                    bot.open_chat(chat)
                     bot.send_message(message)
-
                 except ChatNotFoundException as e:
                     # Avisa se o nome passado entre [ ] não for válido
                     bot.open_chat(TARGET)
