@@ -12,7 +12,8 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions
 from selenium.common.exceptions import NoSuchElementException,\
-                                       StaleElementReferenceException
+                                       StaleElementReferenceException,\
+                                       WebDriverException
 from .ChatTypes import ChatMessage, ChatNotification, ChatTextMessage
 from .Exceptions import ChatListNotFoundException,\
                         ChatNotFoundException,\
@@ -218,7 +219,10 @@ class ZapAPI:
         # Encontra a caixa de pesquisa e digita o nome da pessoa
         search_box = self.driver.find_element(By.XPATH, SEARCH_BAR)
         self.driver.execute_script('arguments[0].innerHTML="";', search_box)
-        search_box.send_keys(target)
+        try:
+            search_box.send_keys(target)
+        except WebDriverException as e:
+            logger.error(e)
 
         # Espera pelo termino do loading
         WebDriverWait(self.driver, 2).until(
@@ -252,11 +256,15 @@ class ZapAPI:
         mensagem_lines = mensagem.split('\n')
         self.driver.execute_script('arguments[0].innerHTML="";', caixa_de_mensagem)
         for i, line in enumerate(mensagem_lines):
-            caixa_de_mensagem.send_keys(line)
+            try:
+                caixa_de_mensagem.send_keys(line)
+            except WebDriverException as e:
+                logger.error(e)
             if i < len(mensagem_lines)-1:
                 caixa_de_mensagem.send_keys(Keys.SHIFT+Keys.ENTER)
         botao_enviar = self.driver.find_element(By.XPATH, SEND_BUTTON)
         botao_enviar.click()
+
 
     def get_messages(self, only_new_messages: bool=True, max_number: int=-1) -> list[ChatMessage]:
         """ Retorna mensages do chat aberto.

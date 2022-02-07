@@ -29,12 +29,10 @@ def zapbot(bot: ZapAPI):
                     bot.send_message(str(e))
                 except (ValueError, AttributeError):
                     pass
-
             elif msg.sender != MY_NAME:
-
                 # Tunel das conversas para a conversa designada
                 bot.open_chat(TARGET)
-                bot.send_message('({}) {} -> {}'.format(msg.chat, msg.sender, msg.message))
+                bot.send_message('({}) {} -> {}'.format(msg.chat, msg.sender, msg.message.replace(':', ';')))
 
 
 if __name__=='__main__':
