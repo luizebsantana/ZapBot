@@ -1,6 +1,4 @@
-from email import message
-import os, sys, re
-import queue
+import os, sys
 import logging
 from time import sleep
 
@@ -14,9 +12,7 @@ TARGET= 'Eu'
 MY_NAME = 'Thales Fernandes'
         
 def zapbot(bot: ZapAPI):
-
     while True:
-        # Aguarda um tempo minimo para realizar o loop
         sleep(.5)
         for msg in bot:
             if msg.chat == TARGET:
