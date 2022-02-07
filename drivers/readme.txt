@@ -1,1 +1,2 @@
-chrome drive: chrome v77.0.3865.40
+chrome drive: chrome v97
+https://chromedriver.chromium.org/downloads

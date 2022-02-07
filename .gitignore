@@ -1,0 +1,4 @@
+userdata
+venv
+*.exe
+__pycache__
