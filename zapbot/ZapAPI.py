@@ -104,6 +104,8 @@ class ZapAPI:
             self.driver.close()
 
         self.__contact_last_message: dict = {}
+        self.__init_chats()
+
 
     def get_notifications(self, archived: bool = False) -> list[ChatNotification]:
         """ Retorna as notificações não lidas.
@@ -135,8 +137,9 @@ class ZapAPI:
             messages.append(ChatNotification(name, dt_string, preview))
         return messages
 
-    def open_chat(self, search: str, exact_match: bool = False) -> str:
-        """ Abre um chat para leitura ou envio de mensages.
+    def open_chat(self, search: str=None, exact_match: bool=False) -> str:
+        """ Abre um chat para leitura ou envio de mensages, se o parametro de
+            busca nao for fornecido retorna o chat aberto atualmente.
 
             Parameters:
                 search (str): nome para busca nas conversas contatos e grupos
@@ -149,6 +152,13 @@ class ZapAPI:
                 str: O nome do contato encotrado e aberto, caso nenhum seja
                 encontrado None é retornado
         """
+
+        if search is None:
+            try:
+                return self.driver.find_element(By.XPATH, CHAT_NAME).text
+            except:
+                return None
+
         # Verifica se já corresponde ao chat aberto
         try:
             open_chat = self.driver.find_element(By.XPATH, CHAT_NAME).text
@@ -277,15 +287,40 @@ class ZapAPI:
                 if message == self.__contact_last_message[open_chat]:
                     break
                 else:
-                    messages.append(message)
+                    messages.insert(0, message)
             except StaleElementReferenceException as e:
                 logger.error(e)
             except NoSuchElementException:
                 pass
         if len(messages) > 0:
-            self.__contact_last_message[open_chat] = messages[0]
+            self.__contact_last_message[open_chat] = messages[-1]
         return messages
-    
+
+    def __init_chats(self):
+        search_box = self.driver.find_element(By.XPATH, SEARCH_BAR)
+        self.driver.execute_script('arguments[0].innerHTML="";', search_box)
+        search_box.send_keys(' ')
+        try:
+            container = self.driver.find_element(By.XPATH, CHAT_LIST_CONTAINER)
+        except NoSuchElementException:
+            self.driver.find_element(By.XPATH, SEARCH_CANCEL_BUTTON).click()
+            container = self.driver.find_element(By.XPATH, CHAT_LIST_CONTAINER)
+        # Retorna a barra de rolagem para o inicio
+        self.driver.execute_script('arguments[0].scroll(0,0)', container)
+        # Espera a execucao do javascript
+        # Espera pelo termino do loading
+        WebDriverWait(self.driver, 2).until(
+            expected_conditions.element_to_be_clickable((By.XPATH, SEARCH_CANCEL_BUTTON))
+        )
+        # Ordena resultados pelo ordem da posicao y na tela
+        res = sorted(container.find_elements(By.XPATH, SEARCH_RESULTS),  key=lambda x: x.location['y'])
+        chat_names = [r.find_element(By.XPATH, SEARCH_RESULTS_NAME).text for r in res]
+        for chat_name in chat_names:
+            logger.info("initializing chats: "+chat_name)
+            self.open_chat(chat_name, True)
+            self.get_messages()
+        return None
+
     def __open_archived(self) -> bool:
         tries = 0
         while tries < 4 :

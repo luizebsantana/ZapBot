@@ -6,7 +6,7 @@ from zapbot import ZapAPI
 
 # Replicando mensagens
 # Não escutar por notificações que contenham...
-IGNORE_FROM = ('Analytics', 'Carran', 'Estrutura', '2', 'Padri', 'Se vi', 'BROTH', 'Rol', 'Botelho')
+IGNORE_FROM = ('Eu',)
 
 def zapbot(bot):
     while True:
@@ -26,6 +26,9 @@ def zapbot(bot):
             # Abrindo chat da notificação
             bot.open_chat(notification.name)
 
+        if bot.open_chat() == 'Eu':
+            continue
+        
         # Replicando as novas mensagens
         messages = bot.get_messages(True)
 
@@ -34,11 +37,12 @@ def zapbot(bot):
             continue
 
         # Caso contrario realiza o reenvio das mensages
+        # Abrindo chat alvo
+        bot.open_chat('Eu', True)
         for msg in messages:
-
             # Previnindo o reenvio da mensagem que estamos enviado
-            if 'BOT: ' not in msg.message:
-                bot.send_message('BOT: '+msg.message)
+            if 'BOT: ' not in msg.message: 
+                bot.send_message('{}: {}'.format(msg.sender,msg.message))
         
         
 
