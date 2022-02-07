@@ -225,10 +225,10 @@ class ZapAPI:
             logger.error(e)
 
         # Espera pelo termino do loading
-        WebDriverWait(self.driver, 2).until(
+        WebDriverWait(self.driver, 5).until(
             expected_conditions.element_to_be_clickable((By.XPATH, SEARCH_CANCEL_BUTTON))
         )
-        
+    
         # Retorna lista de conversas
         res = self.__get_chat_list_elements()
         result_name = res[0].find_element(By.XPATH, LIST_ITEM_NAME).text
