@@ -1,0 +1,2 @@
+# ZapBot
+Whatsapp web bot
