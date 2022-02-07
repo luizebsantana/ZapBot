@@ -240,7 +240,7 @@ class ZapAPI:
         botao_enviar = self.driver.find_element(By.XPATH, SEND_BUTTON)
         botao_enviar.click()
 
-    def get_messages(self, only_new_messages: bool=True) -> list[ChatMessage]:
+    def get_messages(self, only_new_messages: bool=True, max_number: int=-1) -> list[ChatMessage]:
         """ Retorna mensages do chat aberto.
 
             Parameters:
@@ -284,7 +284,7 @@ class ZapAPI:
                 dt = datetime.strptime(re.search("\[.*?\]", metadata_raw).group(0), '[%H:%M, %d/%m/%Y]')
                 content = data.text.replace('\\n','\n')
                 message = ChatTextMessage(sender=sender, datetime=dt, message=content)
-                if message == self.__contact_last_message[open_chat]:
+                if message == self.__contact_last_message[open_chat] or (max_number > -1 and len(messages) >= max_number):
                     break
                 else:
                     messages.insert(0, message)
@@ -316,9 +316,10 @@ class ZapAPI:
         res = sorted(container.find_elements(By.XPATH, SEARCH_RESULTS),  key=lambda x: x.location['y'])
         chat_names = [r.find_element(By.XPATH, SEARCH_RESULTS_NAME).text for r in res]
         for chat_name in chat_names:
-            logger.info("initializing chats: "+chat_name)
             self.open_chat(chat_name, True)
-            self.get_messages()
+            msg = self.get_messages(max_number=1)
+            if msg is not None and len(msg) > 0:
+                logger.info("initializing chats: "+chat_name+"   "+msg[0].message)
         return None
 
     def __open_archived(self) -> bool:
