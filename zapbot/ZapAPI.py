@@ -92,7 +92,7 @@ class ZapAPI:
         # Verifica se a caixa de pesquisa existe e caso exista
         while tentativas < 10:
             try:
-                WebDriverWait(self.driver, 2).until(
+                WebDriverWait(self.driver, 10).until(
                   expected_conditions.element_to_be_clickable(
                     (By.XPATH, SEARCH_BAR)
                   )
@@ -154,24 +154,6 @@ class ZapAPI:
             messages.append(ChatNotification(name, dt_string, preview))
         return messages
 
-    def __lookup_new_messages(self) -> int:
-        messages_fount: int = 0
-        for notify in self.get_notifications():
-            self.open_chat(notify.name)
-            messages = self.get_messages()
-            if messages is not None and len(messages) > 0:
-                messages_fount += len(messages)
-                self.queue.extend(messages)
-        for res in self.__get_chat_list_elements():
-            self.__open_chat_list_item(res)
-            messages = self.get_messages()
-            if messages is not None and len(messages) > 0:
-                messages_fount += len(messages)
-                self.queue.extend(messages)
-            else:
-                break
-        return messages_fount
-
     def get_chat_list(self) -> list[str]:
         chat_list: list[str] = []
         for res in self.__get_chat_list_elements():
@@ -225,7 +207,7 @@ class ZapAPI:
             logger.error(e)
 
         # Espera pelo termino do loading
-        WebDriverWait(self.driver, 5).until(
+        WebDriverWait(self.driver, 10).until(
             expected_conditions.element_to_be_clickable((By.XPATH, SEARCH_CANCEL_BUTTON))
         )
     
@@ -262,9 +244,11 @@ class ZapAPI:
                 logger.error(e)
             if i < len(mensagem_lines)-1:
                 caixa_de_mensagem.send_keys(Keys.SHIFT+Keys.ENTER)
-        botao_enviar = self.driver.find_element(By.XPATH, SEND_BUTTON)
-        botao_enviar.click()
-
+        try:
+            botao_enviar = self.driver.find_element(By.XPATH, SEND_BUTTON)
+            botao_enviar.click()
+        except NoSuchElementException as e:
+            logger.error(e)
 
     def get_messages(self, only_new_messages: bool=True, max_number: int=-1) -> list[ChatMessage]:
         """ Retorna mensages do chat aberto.
@@ -326,6 +310,24 @@ class ZapAPI:
             self.__contact_last_message[open_chat] = messages[-1]
             return messages
         return None
+
+    def __lookup_new_messages(self) -> int:
+        messages_fount: int = 0
+        for notify in self.get_notifications():
+            self.open_chat(notify.name)
+            messages = self.get_messages()
+            if messages is not None and len(messages) > 0:
+                messages_fount += len(messages)
+                self.queue.extend(messages)
+        for res in self.__get_chat_list_elements():
+            self.__open_chat_list_item(res)
+            messages = self.get_messages()
+            if messages is not None and len(messages) > 0:
+                messages_fount += len(messages)
+                self.queue.extend(messages)
+            else:
+                break
+        return messages_fount
 
     def __open_chat_list_item(self, list_item: WebElement) -> None:
         # Tenta abrir a mensagem
