@@ -27,25 +27,23 @@ def zapbot(bot):
             # Abrindo chat da notificação
             bot.open_chat(notification.name)
 
-        # Replicando as novas mensagens
-        messages = bot.get_messages(True)
+            # Capturando novas mensagens
+            messages = bot.get_messages(True)
+            if messages is None:
+                continue
 
-        # Caso contrario realiza o reenvio das mensages
-        # Abrindo chat alvo
-        if messages is None:
-            continue
-
-        for msg in messages:
-            # Previnindo o reenvio da mensagem que estamos enviado
-            if msg.chat != TARGET and bot.open_chat(TARGET): 
-                print('({}) {}: {}'.format(msg.chat, msg.sender, msg.message))
-                # bot.send_message('({}) {}: {}'.format(msg.chat, msg.sender, msg.message))
+            bot.open_chat(TARGET)
+            for msg in messages:
+                # Previnindo o reenvio da mensagem que estamos enviado
+                if msg.chat != TARGET: 
+                    print('({}) {}: {}'.format(msg.chat, msg.sender, msg.message))
+                    # bot.send_message('({}) {}: {}'.format(msg.chat, msg.sender, msg.message))
         
         
 
 if __name__=='__main__':
     # Inicializa bot
-    bot = ZapAPI("C:/Thales/Curiosidades/ZapBot/drivers/chromedriver.exe", debug_level=logging.DEBUG)
+    bot = ZapAPI("C:/Thales/Curiosidades/ZapBot/drivers/chromedriver.exe", debug_level=logging.ERROR)
     try:
         zapbot(bot)
     except Exception as e:

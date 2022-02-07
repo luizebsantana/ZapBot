@@ -24,18 +24,18 @@ def zapbot(bot):
                 continue
 
             # Abrindo chat da notificação
-            bot.open_chat(notification.name, True)
+            bot.open_chat(notification.name)
 
-        # Replicando as novas mensagens
-        messages = bot.get_messages(True)
-        if messages is None:
-            continue
+            # Replicando as novas mensagens
+            messages = bot.get_messages(True)
+            if messages is None:
+                continue
 
-        # Caso contrario realiza o reenvio das mensages
-        for msg in messages:
-            # Previnindo o reenvio da mensagem que estamos enviado
-            if 'BOT: ' not in msg.message:
-                bot.send_message('BOT: '+msg.message)
+            # Caso contrario realiza o reenvio das mensages
+            for msg in messages:
+                # Previnindo o reenvio da mensagem que estamos enviado
+                if 'BOT: ' not in msg.message:
+                    bot.send_message('BOT: '+msg.message)
         
         
 
