@@ -128,7 +128,8 @@ class ZapAPI:
             name = e.find_element(By.XPATH, NAO_LIDAS_TITLE).get_attribute('title')
             dt_string = e.find_element(By.XPATH, NAO_LIDAS_TIME).text
             try:
-                preview = ZapAPI.__preview_string_preprocess(e.find_element(By.XPATH, NAO_LIDAS_PREVIEW).get_attribute('title'))
+                preview = e.find_element(By.XPATH, NAO_LIDAS_PREVIEW).get_attribute('title')
+                preview = preview.replace('\n','\\n')
             except StaleElementReferenceException:
                 preview = None
             messages.append(ChatNotification(name, dt_string, preview))
@@ -219,10 +220,13 @@ class ZapAPI:
                 None
         """
         # pre-process mensage
-        mensagem = mensagem.replace('\n','\\n')
+        mensagem_lines = mensagem.split('\n')
         caixa_de_mensagem = self.driver.find_element(By.XPATH, MENSAGE_BOX)
         self.driver.execute_script('arguments[0].innerHTML="";', caixa_de_mensagem)
-        caixa_de_mensagem.send_keys(mensagem)
+        for i, line in enumerate(mensagem_lines):
+            caixa_de_mensagem.send_keys(line)
+            if i < len(mensagem_lines)-1:
+                caixa_de_mensagem.send_keys(Keys.SHIFT+Keys.ENTER)
         botao_enviar = self.driver.find_element(By.XPATH, SEND_BUTTON)
         botao_enviar.click()
 
@@ -268,7 +272,7 @@ class ZapAPI:
                 metadata_raw = metadata_element.get_attribute('data-pre-plain-text')
                 sender = re.search('(?<=\] ).+:', metadata_raw).group(0)[:-1]
                 dt = datetime.strptime(re.search("\[.*?\]", metadata_raw).group(0), '[%H:%M, %d/%m/%Y]')
-                content = ZapAPI.__string_preprocess(data.text)
+                content = data.text.replace('\\n','\n')
                 message = ChatTextMessage(sender=sender, datetime=dt, message=content)
                 if message == self.__contact_last_message[open_chat]:
                     break
@@ -314,9 +318,3 @@ class ZapAPI:
         logger.error('Nao foi possivel fechar a aba arquivados')
         return False
 
-    @staticmethod
-    def __string_preprocess(string: str) -> str:
-        return string.\
-            replace('\u202a', '').\
-            replace('\u202c', '').\
-            replace('\\n','\n')
