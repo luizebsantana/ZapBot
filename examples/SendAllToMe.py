@@ -25,7 +25,6 @@ def zapbot(bot: ZapAPI):
                     bot.open_chat(chat)
                     bot.send_message(message)
                 except ChatNotFoundException as e:
-                    # Avisa se o nome passado entre [ ] não for válido
                     bot.open_chat(TARGET)
                     bot.send_message(str(e))
                 except (ValueError, AttributeError):
@@ -35,7 +34,7 @@ def zapbot(bot: ZapAPI):
 
                 # Tunel das conversas para a conversa designada
                 bot.open_chat(TARGET)
-                bot.send_message('({}) {}: {}'.format(msg.chat, msg.sender, msg.message))
+                bot.send_message('({}) {} -> {}'.format(msg.chat, msg.sender, msg.message))
 
 
 if __name__=='__main__':
