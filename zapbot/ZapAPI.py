@@ -13,7 +13,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions
 from selenium.common.exceptions import NoSuchElementException,\
                                        StaleElementReferenceException,\
-                                       WebDriverException
+                                       WebDriverException,\
+                                       TimeoutException
 from .ChatTypes import ChatMessage, ChatNotification, ChatTextMessage
 from .Exceptions import ChatListNotFoundException,\
                         ChatNotFoundException,\
@@ -207,10 +208,14 @@ class ZapAPI:
             logger.error(e)
 
         # Espera pelo termino do loading
-        WebDriverWait(self.driver, 10).until(
-            expected_conditions.element_to_be_clickable((By.XPATH, SEARCH_CANCEL_BUTTON))
-        )
-    
+        try:
+            WebDriverWait(self.driver, 10).until(
+                expected_conditions.element_to_be_clickable((By.XPATH, SEARCH_CANCEL_BUTTON))
+            )
+        except TimeoutException as e:
+            logger.error(e)
+            raise ChatNotFoundException(target, message="Nao foi possivel carregar os resultados.") from None
+
         # Retorna lista de conversas
         res = self.__get_chat_list_elements()
         result_name = res[0].find_element(By.XPATH, LIST_ITEM_NAME).text
@@ -250,12 +255,10 @@ class ZapAPI:
         except NoSuchElementException as e:
             logger.error(e)
 
-    def get_messages(self, only_new_messages: bool=True, max_number: int=-1) -> list[ChatMessage]:
+    def get_messages(self, max_number: int=-1) -> list[ChatMessage]:
         """ Retorna mensages do chat aberto.
 
             Parameters:
-                only_new_messages (bool): Verdadeiro retorna somente as mensagens novas,
-                Falso retorna as ultimas mensagens (quantidade indefinida aprox.: [8 a 30] )
                 max_number (int): O número maximo de mensagens a ser retornado.
 
             Returns:
@@ -303,10 +306,10 @@ class ZapAPI:
                 logger.error(e)
             except NoSuchElementException:
                 pass
-        if self.__contact_last_message[open_chat] is None:
-            self.__contact_last_message[open_chat] = messages[-1]
-            return None
         if len(messages) > 0:
+            if self.__contact_last_message[open_chat] is None:
+                self.__contact_last_message[open_chat] = messages[-1]
+                return None
             self.__contact_last_message[open_chat] = messages[-1]
             return messages
         return None
