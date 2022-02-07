@@ -316,12 +316,6 @@ class ZapAPI:
 
     def __lookup_new_messages(self) -> int:
         messages_fount: int = 0
-        for notify in self.get_notifications():
-            self.open_chat(notify.name)
-            messages = self.get_messages()
-            if messages is not None and len(messages) > 0:
-                messages_fount += len(messages)
-                self.queue.extend(messages)
         for res in self.__get_chat_list_elements():
             self.__open_chat_list_item(res)
             messages = self.get_messages()
@@ -330,6 +324,12 @@ class ZapAPI:
                 self.queue.extend(messages)
             else:
                 break
+        for notify in self.get_notifications():
+            self.open_chat(notify.name)
+            messages = self.get_messages()
+            if messages is not None and len(messages) > 0:
+                messages_fount += len(messages)
+                self.queue.extend(messages)
         return messages_fount
 
     def __open_chat_list_item(self, list_item: WebElement) -> None:
