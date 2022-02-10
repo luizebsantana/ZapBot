@@ -1,27 +1,51 @@
 import os, sys
 import logging
 from time import sleep
-
+from datetime import datetime
 sys.path.append(os.getcwd())
-from zapbot import ZapAPI
-from zapbot.ChatTypes import ChatTextMessage 
-from zapbot.Exceptions import ChatNotFoundException
+print(os.getcwd())
+from zapapi.ZapAPI import ZapAPI
+from zapapi.ChatTypes import ChatTextMessage 
+from zapapi.Exceptions import ChatNotFoundException
+from zapbot.StateMachine import StateMachine
+import io
+import yaml
+try:
+    from yaml import CLoader as Loader
+except ImportError:
+    from yaml import Loader
+
+yaml = yaml.load(io.FileIO('./examples/fsm.yaml'), Loader)
+bot: StateMachine = StateMachine(**yaml)
 
 # Replicando mensagens
 TARGET= 'Eu'
 MY_NAME = 'Thales Fernandes'
         
-def zapbot(bot: ZapAPI):
-
+def zapbot(api: ZapAPI):
     while True:
-        for msg in bot:
-            if msg.chat == TARGET and msg.message[0] == '-':
-                sender = TARGET if msg.sender == MY_NAME else msg.sender
-                bot.open_chat(sender)
-                bot.send_message("Ola {}! tudo bem?".format(msg.sender.split(' ')[0]))
-
+        sleep(.5)
+        for msg in api:
+            if msg.chat == TARGET:
+                try:
+                    chat, message = msg.message.split(":")
+                    if chat.startswith('BOT'):
+                        now = datetime.now()
+                        a = bot.send(message=msg.message, sender=msg.sender, h=now.hour, m=now.min, s=now.second, D=now.day, M=now.month, A=now.year)
+                        print("a", a.message)
+                        api.open_chat(TARGET)
+                        api.send_message('\n'.join(a.message))
+                except ChatNotFoundException as e:
+                    api.open_chat(TARGET)
+                    api.send_message(str(e))
+                except (ValueError, AttributeError):
+                    pass
+            elif msg.sender != MY_NAME:
+                # Tunel das conversas para a conversa designada
+                api.open_chat(TARGET)
+                api.send_message('({}) {} -> {}'.format(msg.chat, msg.sender, msg.message.replace(':', ';')))
 
 if __name__=='__main__':
     # Inicializa bot
-    bot = ZapAPI("C:/Thales/Curiosidades/ZapBot/drivers/chromedriver.exe", debug_level=logging.ERROR)
-    zapbot(bot)
+    api = ZapAPI("C:/Thales/Curiosidades/ZapBot/drivers/chromedriver.exe", debug_level=logging.ERROR)
+    zapbot(api)

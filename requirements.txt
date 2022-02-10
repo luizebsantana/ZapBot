@@ -2,3 +2,4 @@
 
 selenium
 ipykernel
+pyyaml
