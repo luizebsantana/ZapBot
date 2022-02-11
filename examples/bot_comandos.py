@@ -1,4 +1,4 @@
-import os, sys
+import os, io, sys
 import logging
 from time import sleep
 from datetime import datetime
@@ -8,42 +8,43 @@ from zapapi.ZapAPI import ZapAPI
 from zapapi.ChatTypes import ChatTextMessage 
 from zapapi.Exceptions import ChatNotFoundException
 from zapbot.StateMachine import StateMachine
-import io
+
 import yaml
 try:
     from yaml import CLoader as Loader
 except ImportError:
     from yaml import Loader
 
-yaml = yaml.load(io.FileIO('./examples/fsm.yaml'), Loader)
-bot: StateMachine = StateMachine(**yaml)
+yaml_dict = yaml.load(io.FileIO('./examples/fsm.yaml'), Loader)
 
 # Replicando mensagens
-TARGET= 'Eu'
+TARGET= ('Eu', 'Teste') 
 MY_NAME = 'Thales Fernandes'
         
 def zapbot(api: ZapAPI):
+
+    stateMachines = {}
+
     while True:
         sleep(.5)
         for msg in api:
-            if msg.chat == TARGET:
+            if msg.chat in TARGET:
+                if msg.sender not in stateMachines:
+                    stateMachines[msg.sender] = StateMachine(**yaml_dict)
+                bot = stateMachines[msg.sender]
                 try:
-                    chat, message = msg.message.split(":")
-                    if chat.startswith('BOT'):
+                    if not msg.message.lower().startswith('bot'):
+                        print(msg.message)
                         now = datetime.now()
-                        a = bot.send(message=msg.message, sender=msg.sender, h=now.hour, m=now.min, s=now.second, D=now.day, M=now.month, A=now.year)
-                        print("a", a.message)
-                        api.open_chat(TARGET)
-                        api.send_message('\n'.join(a.message))
+                        response = bot.send(message=msg.message, sender=msg.sender, h=now.hour, m=now.minute, s=now.second, D=now.day, M=now.month, A=now.year)
+                        api.open_chat(msg.chat)
+                        for res in response:
+                            api.send_message('bot:\n'+'\n'.join(res))
                 except ChatNotFoundException as e:
-                    api.open_chat(TARGET)
+                    api.open_chat('Eu')
                     api.send_message(str(e))
                 except (ValueError, AttributeError):
                     pass
-            elif msg.sender != MY_NAME:
-                # Tunel das conversas para a conversa designada
-                api.open_chat(TARGET)
-                api.send_message('({}) {} -> {}'.format(msg.chat, msg.sender, msg.message.replace(':', ';')))
 
 if __name__=='__main__':
     # Inicializa bot

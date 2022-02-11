@@ -1,5 +1,3 @@
-
-from http.client import REQUEST_URI_TOO_LONG
 import os, re
 import logging
 from time import sleep
@@ -15,13 +13,13 @@ from selenium.common.exceptions import NoSuchElementException,\
                                        StaleElementReferenceException,\
                                        WebDriverException,\
                                        TimeoutException
-from .ChatTypes import ChatMessage, ChatNotification, ChatTextMessage
-from .Exceptions import ChatListNotFoundException,\
-                        ChatNotFoundException,\
-                        NoOpenChatException
+from .ChatTypes import ChatMessage, ChatListItem, ChatTextMessage
+from .Exceptions import ChatNotFoundException, NoOpenChatException
+from .xpaths import SEARCH_BAR, LIST, LIST_CONTAINER, LIST_ITEM_NAO_LIDA,\
+SEARCH_CANCEL_BUTTON, CHAT, CHAT_NAME, MENSAGE_BOX, SEND_BUTTON,\
+ARCHIVED_OPEN_BUTTON, CHAT_CONTAINER, ARCHIVED_MENU_HEADER,\
+ARCHIVED_BACK_BUTTON
 
-# from PIL import Image
-# from io import BytesIO
 
 import logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
@@ -43,43 +41,27 @@ strdiasemana = [
 
 PROFILE_PATH = os.path.join(os.getcwd(),'userdata', 'profile', 'wpp')
 
-# ---------- XPATHS ------------
-SEARCH_BAR = '//div[@data-tab="3" and @role="textbox"]'
-LIST_CONTAINER = '//div[@id="pane-side"]'
-CHAT_LIST = './/div[@aria-label="Lista de conversas"]/div/div/div'
-SEARCH_LIST = './/div[@aria-label="Resultados da pesquisa."]/div/div/div'
-LIST_ITEM_NAME = './/div[@aria-colindex="2"]/div[1]'
-SEARCH_CANCEL_BUTTON = '//button[@aria-label="Lista de conversas"]/../span/button'
-
-ARCHIVED_OPEN_BUTTON = '//div[@id="pane-side"]/button[@aria-label="Arquivadas "]'
-ARCHIVED_BACK_BUTTON = '//header//button[@aria-label="Voltar"]'
-ARCHIVED_MENU_HEADER = '//h1[contains(text(),"Arquivada")]'
-
-NAO_LIDAS = '//*[@role="row"]//div[@aria-colindex="2" and ..//*[contains(@aria-label, "não lida")]]/..'
-NAO_LIDAS_TITLE = './div[1]/div[1]/span'
-NAO_LIDAS_TIME = './div[1]/div[2]'
-NAO_LIDAS_PREVIEW = './div[2]//span'
-
-MENSAGE_BOX = '//div[@title="Mensagem"]'
-SEND_BUTTON = '//button/span[@data-icon="send"]'
-
-CHAT_CONTAINER = '//div[@id="main"]//div[contains(@aria-label, "Lista de mensagens.")]/..'
-CHAT_NAME = '//div[@id="main"]/header/div[2]/div[1]'
-CHAT = '//div[@id="main"]//div[contains(@aria-label, "Lista de mensagens.")]/div'
-
 
 class ZapAPI:
 
-    def __init__(self, driver_path:str, debug_level=logging.DEBUG, profile_path:str = PROFILE_PATH):
+    def __init__(self,
+        driver_path:str,
+        debug_level=logging.DEBUG,
+        driver_options: webdriver.ChromeOptions=None,
+        profile_path:str = PROFILE_PATH,
+        chat_work_list: list[str]=None
+        ):
         
         logger.setLevel(debug_level)
 
+        self.chat_work_list = chat_work_list
         self.url = "https://web.whatsapp.com/"
         self.wait_time = 2
 
         service = Service(driver_path)
-        driver_options = webdriver.ChromeOptions()
-        driver_options.add_argument(r"user-data-dir={}".format(profile_path))
+        if driver_options is None:
+            driver_options = webdriver.ChromeOptions()
+            driver_options.add_argument(r"user-data-dir={}".format(profile_path))
         self.driver = webdriver.Chrome(service=service, options=driver_options)
         self.driver.get(self.url)
         self.driver.implicitly_wait(0)
@@ -126,41 +108,17 @@ class ZapAPI:
         else:
             raise StopIteration
 
-    def get_notifications(self, archived: bool = False) -> list[ChatNotification]:
-        """ DEPRECATED use lookup_new_messages() instead Retorna as notificações não lidas.
-
-            Parameters:
-                archived (bool): Caso verdadeiro também retorna as notificações de chats
-                arquivados.
-
-            Returns: 
-                str: Notificaçoes não lidas
-        """
-        try:
-            self.driver.find_element(By.XPATH, SEARCH_CANCEL_BUTTON).click()
-        except:
-            pass
-        if archived:
-            self.__open_archived()   
-        else:
-            self.__close_archived()
-        messages: list[ChatNotification] = []
-        for e in self.driver.find_elements(By.XPATH, NAO_LIDAS):
-            name = e.find_element(By.XPATH, NAO_LIDAS_TITLE).get_attribute('title')
-            dt_string = e.find_element(By.XPATH, NAO_LIDAS_TIME).text
-            try:
-                preview = e.find_element(By.XPATH, NAO_LIDAS_PREVIEW).get_attribute('title')
-                preview = preview.replace('\n','\\n')
-            except StaleElementReferenceException:
-                preview = None
-            messages.append(ChatNotification(name, dt_string, preview))
-        return messages
-
-    def get_chat_list(self) -> list[str]:
-        chat_list: list[str] = []
-        for res in self.__get_chat_list_elements():
-            chat_list.append(res.find_element(By.XPATH, LIST_ITEM_NAME).text)
-        return chat_list
+    def get_chat_list(self, only_not_readed=False) -> list[ChatListItem]:
+        # Fecha a aba de mensagens arquivadas caso aberta
+        self.__close_archived()
+        # Retorna a barra de rolagem para o inicio
+        container = self.driver.find_element(By.XPATH, LIST_CONTAINER)
+        self.driver.execute_script('arguments[0].scroll(0,0)', container)
+        # Espera a execucao do javascript
+        sleep(0.2)
+        # Ordena resultados pelo ordem da posicao y na tela e retorna a lista de busca ou de conversas
+        res = container.find_elements(By.XPATH, LIST if not only_not_readed else LIST+f'[{LIST_ITEM_NAO_LIDA}]')
+        return [ChatListItem(el) for el in sorted(res, key=lambda x: x.location['y'])]
 
     def open_chat(self, target: str=None, exact_match: bool=True) -> str:
         """ Abre um chat para leitura ou envio de mensages, se o parametro de
@@ -194,9 +152,9 @@ class ZapAPI:
             pass
 
         # Verifica se a conversa requisitada já esta na lista atual 
-        res = self.__get_chat_list_elements()
+        res = self.get_chat_list()
         for r in res:
-            chat_name = r.find_element(By.XPATH, LIST_ITEM_NAME).text
+            chat_name = r.name
             if chat_name == target:
                 return self.__open_chat_list_item(r)
 
@@ -218,10 +176,9 @@ class ZapAPI:
             raise ChatNotFoundException(target, message="Nao foi possivel carregar os resultados.") from None
 
         # Retorna lista de conversas
-        res = self.__get_chat_list_elements()
-        result_name = res[0].find_element(By.XPATH, LIST_ITEM_NAME).text
+        res = self.get_chat_list()
         try:
-            if not exact_match or (exact_match and result_name == target):
+            if not exact_match or (exact_match and res[0].name == target):
                 return self.__open_chat_list_item(res[0])
         finally:
             self.driver.find_element(By.XPATH, SEARCH_CANCEL_BUTTON).click()
@@ -317,7 +274,7 @@ class ZapAPI:
 
     def __lookup_new_messages(self) -> int:
         messages_fount: int = 0
-        for res in self.__get_chat_list_elements():
+        for res in self.get_chat_list():
             self.__open_chat_list_item(res)
             messages = self.get_messages()
             if messages is not None and len(messages) > 0:
@@ -325,59 +282,36 @@ class ZapAPI:
                 self.queue.extend(messages)
             else:
                 break
-        for notify in self.get_notifications():
-            self.open_chat(notify.name)
+        for res in self.get_chat_list(True):
+            self.__open_chat_list_item(res)
             messages = self.get_messages()
-            if messages is not None and len(messages) > 0:
-                messages_fount += len(messages)
-                self.queue.extend(messages)
+            messages_fount += len(messages)
+            self.queue.extend(messages)
         return messages_fount
 
-    def __open_chat_list_item(self, list_item: WebElement) -> None:
+    def __open_chat_list_item(self, list_item: ChatListItem) -> None:
         # Tenta abrir a mensagem
         tries = 0
         # Clica no resultado e espera o chat ser aberto
-        target_chat_name = list_item.find_element(By.XPATH, LIST_ITEM_NAME).text
         while tries < 5:
             try:
                 try:
                     open_chat = self.driver.find_element(By.XPATH, CHAT_NAME).text
-                    if target_chat_name != open_chat:
-                        logger.info("Chat aberto '{}' difere de '{}' tentando novamente...".format(open_chat, target_chat_name))
-                        list_item.click()
+                    if list_item.name != open_chat:
+                        logger.info("Chat aberto '{}' difere de '{}' tentando novamente...".format(open_chat, list_item.name))
+                        list_item.element.click()
                         sleep(0.1)
                     else:
-                        logger.info("Chat '{}' aberto com sucesso.".format(open_chat, target_chat_name))
+                        logger.info("Chat '{}' aberto com sucesso.".format(open_chat, list_item.name))
                         return open_chat
                 except NoSuchElementException:
-                    list_item.click()
+                    list_item.element.click()
                 tries += 1
             except (IndexError, StaleElementReferenceException, NoSuchElementException) as e:
                 logger.error(e)
                 tries += 1
-        logger.error("Nao foi possivel abrir a conversa {}.".format(target_chat_name))
-        raise ChatNotFoundException(target_chat_name)
-
-    def __get_chat_list_elements(self) -> list[WebElement]:
-        # Fecha a aba de mensagens arquivadas caso aberta
-        self.__close_archived()
-        # Retorna a barra de rolagem para o inicio
-        container = self.driver.find_element(By.XPATH, LIST_CONTAINER)
-        self.driver.execute_script('arguments[0].scroll(0,0)', container)
-        # Espera a execucao do javascript
-        sleep(0.2)
-        # Ordena resultados pelo ordem da posicao y na tela e retorna a lista de busca ou de conversas
-        try:
-            res = container.find_elements(By.XPATH, SEARCH_LIST)
-            if len(res) == 0:
-                res = container.find_elements(By.XPATH, CHAT_LIST)
-        except NoSuchElementException:
-            res = container.find_elements(By.XPATH, CHAT_LIST)
-            if len(res) == 0:
-                res = container.find_elements(By.XPATH, SEARCH_LIST)
-        if len(res) == 0:
-            raise ChatListNotFoundException
-        return sorted(res, key=lambda x: x.location['y'])
+        logger.error("Nao foi possivel abrir a conversa {}.".format(list_item.name))
+        raise ChatNotFoundException(list_item.name)
 
     def __open_archived(self) -> bool:
         tries = 0

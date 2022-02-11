@@ -25,16 +25,18 @@ class StateMachine:
         return self.states[self.state].start(**variables)
 
     def send(self, **variables):
+        message = []
         if self.state == None:
             payload = self.start(self.target_state, **variables)
         else:
             payload = self.states[self.state].eval(**variables)
-        print('\n'.join(payload.message))
-        if payload.state is not None:
-            payload = self.start(payload.state, **variables)
-        else:
-            payload = self.start(self.state, **variables)
-        print('\n', '\n'.join(payload.message), '\n')
+            message.append(payload.message)
+            if payload.state is not None:
+                payload = self.start(payload.state, **variables)
+            else:
+                payload = self.start(self.state, **variables)
+        message.append(payload.message)
+        return message
 
 
 if __name__=='__main__':

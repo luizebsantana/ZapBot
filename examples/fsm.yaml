@@ -1,12 +1,20 @@
 name: "Teste 01"
-state: 'begin'
+state: 'intro'
 states:
+  intro:
+    variables: [message, sender]
+    say: 
+      - "Oi {sender} seja bem vindo! percebi que é a primeira vez que entra em contato. "
+      - "Sou um FSM Bot que pode dar informações sobre data e hora!"
+    evaluate:
+      - type: true
+        then:
+          goto: begin
   begin:
     variables: [message, sender]
     timeout: 10000
     say:
-      - Ola eu sou um FSM Bot que pode dar informações sobre data e hora!
-      - O que você deseja fazer {sender}?
+      - O que você deseja saber {sender}?
       - "  1 - Saber a data"
       - "  2 - Saber a hora"
     evaluate:
