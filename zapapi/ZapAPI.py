@@ -12,7 +12,7 @@ from selenium.webdriver.support import expected_conditions
 from selenium.common.exceptions import NoSuchElementException,\
                                        StaleElementReferenceException,\
                                        WebDriverException,\
-                                       TimeoutException
+                                       TimeoutException, InvalidArgumentException
 from .ChatTypes import ChatMessage, ChatListItem, ChatTextMessage
 from .Exceptions import ChatNotFoundException, NoOpenChatException
 from .xpaths import SEARCH_BAR, LIST, LIST_CONTAINER, LIST_ITEM_NAO_LIDA,\
@@ -62,7 +62,10 @@ class ZapAPI:
         if driver_options is None:
             driver_options = webdriver.ChromeOptions()
             driver_options.add_argument(r"user-data-dir={}".format(profile_path))
-        self.driver = webdriver.Chrome(service=service, options=driver_options)
+        try:
+            self.driver = webdriver.Chrome(service=service, options=driver_options)
+        except InvalidArgumentException:
+            raise Exception("Provavelmente uma janela do navegador já está utilizando a pasta de usuarios.")
         self.driver.get(self.url)
         self.driver.implicitly_wait(0)
         logger.info('Driver Inicializado.')
@@ -213,7 +216,7 @@ class ZapAPI:
         except NoSuchElementException as e:
             logger.error(e)
 
-    def get_messages(self, max_number: int=-1) -> list[ChatMessage]:
+    def get_messages(self, only_new_messages: bool=True, max_number: int=-1) -> list[ChatMessage]:
         """ Retorna mensages do chat aberto.
 
             Parameters:
@@ -222,6 +225,7 @@ class ZapAPI:
             Returns:
                 list[ChatMessage]: Lista de mensagens, None se não há novas mensagens
         """
+        new_message = True
         res = self.driver.find_elements(By.XPATH, CHAT)
         messages: list[ChatMessage] = []
         try:
@@ -236,44 +240,63 @@ class ZapAPI:
         if open_chat not in self.__contact_last_message:
             self.__contact_last_message[open_chat] = None
         while len(res) > 0:
+            if max_number > -1 and len(messages) >= max_number:
+                 break
             e = res.pop()
             if self.__contact_last_message[open_chat] is None:
                 try:
                     element = e.find_element(By.XPATH, './/span[@aria-live]')
                     try:
-                        if element.text.index("NÃO LIDA"):
-                            self.__contact_last_message[open_chat] = messages[-1]
+                        if element.text.index("NÃO LIDA") and only_new_messages:
                             break
                     except ValueError:
                         messages.insert(0, ChatMessage(chat=open_chat, message=element.text))
                 except:
                     pass
             try:
+                try:
+                    read_more_button: WebElement = e.find_element(By.XPATH, './/span[@role="button"]')
+                    read_more_button.click()
+                    logger.info("Read more...")
+                    sleep(.2)
+                except NoSuchElementException:
+                    pass
                 metadata_element = e.find_element(By.XPATH, './/div[@data-pre-plain-text]')
                 data = metadata_element.find_element(By.XPATH, './div/span')
                 metadata_raw = metadata_element.get_attribute('data-pre-plain-text')
                 sender = re.search('(?<=\] ).+:', metadata_raw).group(0)[:-1]
                 dt = datetime.strptime(re.search("\[.*?\]", metadata_raw).group(0), '[%H:%M, %d/%m/%Y]')
                 content = data.text.replace('\\n','\n')
-                message = ChatTextMessage(chat=open_chat, sender=sender, datetime=dt, message=content)
-                if message == self.__contact_last_message[open_chat] or (max_number > -1 and len(messages) >= max_number):
-                    break
-                else:
-                    messages.insert(0, message)
+                message = ChatTextMessage(new=new_message, chat=open_chat, sender=sender, datetime=dt, message=content)
+                if new_message and message == self.__contact_last_message[open_chat]:
+                    new_message = False
+                    message = ChatTextMessage(new=new_message, chat=open_chat, sender=sender, datetime=dt, message=content)
+                    if only_new_messages:
+                        break
+                messages.insert(0, message)
             except StaleElementReferenceException as e:
                 logger.error(e)
-            except NoSuchElementException:
-                pass
+            except NoSuchElementException as e:
+                logger.info(e)
         if len(messages) > 0:
             if self.__contact_last_message[open_chat] is None:
                 self.__contact_last_message[open_chat] = messages[-1]
-                return None
+                return None if only_new_messages else messages
             self.__contact_last_message[open_chat] = messages[-1]
             return messages
-        return None
+        return None if only_new_messages else []
 
     def __lookup_new_messages(self) -> int:
         messages_fount: int = 0
+        if self.chat_work_list:
+            for work in self.chat_work_list:
+                self.open_chat(work)
+                messages = self.get_messages()
+                if messages is not None and len(messages) > 0:
+                    messages_fount += len(messages)
+                    self.queue.extend(messages)
+            return messages_fount
+
         for res in self.get_chat_list():
             self.__open_chat_list_item(res)
             messages = self.get_messages()
@@ -285,8 +308,9 @@ class ZapAPI:
         for res in self.get_chat_list(True):
             self.__open_chat_list_item(res)
             messages = self.get_messages()
-            messages_fount += len(messages)
-            self.queue.extend(messages)
+            if messages is not None and len(messages) > 0:
+                messages_fount += len(messages)
+                self.queue.extend(messages)
         return messages_fount
 
     def __open_chat_list_item(self, list_item: ChatListItem) -> None:

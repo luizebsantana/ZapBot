@@ -1,4 +1,5 @@
 userdata
 venv
 *.exe
+env.py
 __pycache__

@@ -47,5 +47,6 @@ class ChatMessage:
 
 @dataclass(frozen=True)
 class ChatTextMessage(ChatMessage):
+    new: bool
     sender: str
     datetime: datetime

@@ -4,11 +4,11 @@ from time import sleep
 from datetime import datetime
 sys.path.append(os.getcwd())
 print(os.getcwd())
-from zapapi.ZapAPI import ZapAPI
+from zapapi import ZapAPI
 from zapapi.ChatTypes import ChatTextMessage 
 from zapapi.Exceptions import ChatNotFoundException
-from zapbot.StateMachine import StateMachine
+from fsm import FSM
+from fsm import util
 
-api = ZapAPI("C:/Thales/Curiosidades/ZapBot/drivers/chromedriver.exe", debug_level=logging.ERROR)
-
-print(api.get_chat_list())
+fsm = FSM.loadYAML('./examples/fsm.yaml')
+fsm.execute()
